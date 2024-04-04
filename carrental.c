@@ -27,20 +27,23 @@
 #define STREAM_INTERARRIVAL_RENTAL 1      /* Random-number stream for interarrivals. */
 #define STREAM_INTERARRIVAL_TERMINAL_1 2  /* Random-number stream for interarrivals. */
 #define STREAM_INTERARRIVAL_TERMINAL_2 3  /* Random-number stream for interarrivals. */
-#define STREAM_UNLOADING 2                /* Random-number stream for job types. */
-#define STREAM_LOADING 3                  /* Random-number stream for service times. */
-#define STREAM_DESTINATION 4              /* Random-number stream for determining the destination of a person from car rental. */
+#define STREAM_UNLOADING 4                /* Random-number stream for job types. */
+#define STREAM_LOADING 5                  /* Random-number stream for service times. */
+#define STREAM_DESTINATION 6              /* Random-number stream for determining the destination of a person from car rental. */
 
 /* Declare non-simlib global variables. */
-int bus_capacity = 20, current_bus_location = RENTAL_ID, bus_wait_time = 5 * 60;
+int bus_capacity = 20, current_bus_location = RENTAL_ID;
 int unload_time_lower = 16, unload_time_upper = 24, load_time_lower = 15, load_time_upper = 25;                                              // in seconds
 double bus_speed = 30.0 / 60.0 / 60.0;                                                                                                       // in miles per second
 double terminal_1_arrival_rate = 14.0 / 60.0 / 60.0, terminal_2_arrival_rate = 10.0 / 60.0 / 60.0, rental_arrival_rate = 24.0 / 60.0 / 60.0; // in per second
 double distance_rental_terminal_1 = 4.5, distance_terminal_1_terminal_2 = 1.0, distance_terminal_2_rental = 4.5;                             // in miles
 double destination_terminal_1_probability = 0.583, destination_terminal_2_probability = 0.417;
-double length_simulation = 80.0 * 60.0 * 60.0; // we observe clock in seconds
-// double length_simulation = 2000.0; // we observe clock in seconds
-double last_bus_arrive_time = 0.0; // Timer to keep track of bus stop time at a location.
+// double length_simulation = 80.0 * 60.0 * 60.0; // we observe clock in seconds
+double length_simulation = 11000.0; // we observe clock in seconds
+double last_bus_arrive_time = 0.0;  // Timer to keep track of bus stop time at a location.
+double last_bus_at_rental = 0.0;    // Timer to keep track of bus stop time at rental.
+double bus_wait_time = 5.0 * 60.0;
+double current_bus_wait_time = 0.0;
 FILE *outfile;
 
 void person_arrive(int location) // Event function for arrival of a person to a location.
@@ -86,9 +89,6 @@ void bus_arrive(int location) // Event function for arrival of a bus in a locati
     } else if (list_size[location] > 0) {
         // Start loading process.
         event_schedule(sim_time + uniform(load_time_lower, load_time_upper, STREAM_LOADING), EVENT_LOAD_PERSON);
-    } else {
-        // If no people in queue and no people on bus, schedule bus departure.
-        event_schedule(sim_time + bus_wait_time, EVENT_BUS_DEPARTURE);
     }
 }
 
@@ -110,6 +110,15 @@ void bus_depart(int location) // Event function for departure of a bus from a lo
     event_schedule(sim_time + (next_distance / bus_speed), EVENT_BUS_ARRIVAL);
     current_bus_location = (location == RENTAL_ID) ? TERMINAL_1_ID : (location == TERMINAL_1_ID) ? TERMINAL_2_ID
                                                                                                  : RENTAL_ID;
+    // Record time the bus was at this location.
+    sampst(sim_time - last_bus_arrive_time, location + 5);
+    // Record lap time
+    if (location == RENTAL_ID) {
+        if (last_bus_at_rental != 0.0) {
+            sampst(sim_time - last_bus_at_rental, 10);
+        }
+        last_bus_at_rental = sim_time;
+    }
 }
 
 void person_unload(int location) // Event function for unloading a person from the bus. This function schedules the unloading of the next person if there are still people on the bus.
@@ -122,6 +131,8 @@ void person_unload(int location) // Event function for unloading a person from t
         list_remove(FIRST, BUS_ID);
         if (transfer[2] == location) {
             found = 1;
+            // Record time this person was in system.
+            sampst(sim_time - transfer[1], location + 10);
         } else {
             list_file(LAST, BUS_ID);
         }
@@ -134,9 +145,11 @@ void person_unload(int location) // Event function for unloading a person from t
         // If people in queue at this location, start loading process.
         event_schedule(sim_time + uniform(load_time_lower, load_time_upper, STREAM_LOADING), EVENT_LOAD_PERSON);
     } else {
+        // Make sure double departure never happens
+        event_cancel(EVENT_BUS_DEPARTURE);
         // If no people in queue and no people on bus, schedule bus departure.
-        bus_wait_time = (sim_time - last_bus_arrive_time > bus_wait_time) ? 0 : bus_wait_time - (sim_time - last_bus_arrive_time);
-        event_schedule(sim_time + bus_wait_time, EVENT_BUS_DEPARTURE);
+        current_bus_wait_time = (sim_time - last_bus_arrive_time > bus_wait_time) ? 0 : bus_wait_time - (sim_time - last_bus_arrive_time);
+        event_schedule(sim_time + current_bus_wait_time, EVENT_BUS_DEPARTURE);
     }
 }
 
@@ -146,43 +159,70 @@ void person_load(int location) // Event function for loading a person to the bus
     if (list_size[BUS_ID] < bus_capacity && list_size[location] > 0) {
         // Load one person to the bus.
         list_remove(FIRST, location);
+        // Record delay of this person.
+        sampst(sim_time - transfer[1], location);
+        // Add this person to the bus.
         list_file(LAST, BUS_ID);
         // If there are still people in the queue, schedule loading of the next person
         if (list_size[location] > 0) {
             event_schedule(sim_time + uniform(load_time_lower, load_time_upper, STREAM_LOADING), EVENT_LOAD_PERSON);
         }
     } else {
-        bus_wait_time = (sim_time - last_bus_arrive_time > bus_wait_time) ? 0 : bus_wait_time - (sim_time - last_bus_arrive_time);
-        event_schedule(sim_time + bus_wait_time, EVENT_BUS_DEPARTURE);
+        // Make sure double departure never happens
+        event_cancel(EVENT_BUS_DEPARTURE);
+        // If no people in queue and no people on bus, schedule bus departure.
+        current_bus_wait_time = (sim_time - last_bus_arrive_time > bus_wait_time) ? 0 : bus_wait_time - (sim_time - last_bus_arrive_time);
+        event_schedule(sim_time + current_bus_wait_time, EVENT_BUS_DEPARTURE);
     }
 }
 
 void report(void) /* Report generator function. */
 {
-    // int i;
-    // double overall_avg_job_tot_delay, avg_job_tot_delay, sum_probs;
+    // Report average and maximum queue length for each location through filest that reads from lists
+    fprintf(outfile, "\n\nLocation     Average queue length     Maximum queue length");
+    filest(RENTAL_ID);
+    fprintf(outfile, "\n\nRental%27.3f%25.3f", transfer[1], transfer[2]);
+    filest(TERMINAL_1_ID);
+    fprintf(outfile, "\nTerminal 1%23.3f%25.3f", transfer[1], transfer[2]);
+    filest(TERMINAL_2_ID);
+    fprintf(outfile, "\nTerminal 2%23.3f%25.3f", transfer[1], transfer[2]);
 
-    // /* Compute the average total delay in queue for each job type and the
-    //    overall average job total delay. */
+    // Report average and maximum delay in each location through sampst that reads from sampst
+    fprintf(outfile, "\n\n\n\nLocation           Average delay            Maximum delay");
+    sampst(0.0, -RENTAL_ID);
+    fprintf(outfile, "\n\nRental%26.3f%25.3f", transfer[1], transfer[3]);
+    sampst(0.0, -TERMINAL_1_ID);
+    fprintf(outfile, "\nTerminal 1%22.3f%25.3f", transfer[1], transfer[3]);
+    sampst(0.0, -TERMINAL_2_ID);
+    fprintf(outfile, "\nTerminal 2%22.3f%25.3f", transfer[1], transfer[3]);
 
-    // fprintf(outfile, "\n\n\n\nJob type     Average total delay in queue");
-    // overall_avg_job_tot_delay = 0.0;
-    // sum_probs = 0.0;
-    // for (i = 1; i <= num_job_types; ++i) {
-    //     avg_job_tot_delay = sampst(0.0, -(num_stations + i)) * num_tasks[i];
-    //     fprintf(outfile, "\n\n%4d%27.3f", i, avg_job_tot_delay);
-    //     overall_avg_job_tot_delay += (prob_distrib_job_type[i] - sum_probs) * avg_job_tot_delay;
-    //     sum_probs = prob_distrib_job_type[i];
-    // }
-    // fprintf(outfile, "\n\nOverall average job total delay =%10.3f\n", overall_avg_job_tot_delay);
+    // Report average and maximum num of people in bus (which is just the queue length of bus)
+    fprintf(outfile, "\n\n\n\nAverage number of people on bus      Maximum number of people on bus");
+    filest(BUS_ID);
+    fprintf(outfile, "\n\n%.3f%38.3f", transfer[1], transfer[2]);
 
-    // /* Compute the average number in queue, the average utilization, and the
-    //    average delay in queue for each station. */
+    // Report average maximum minimum time bus is stopped at each location
+    fprintf(outfile, "\n\n\n\nLocation     Average bus stop time        Maximum bus stop time       Minimum bus stop time");
+    sampst(0.0, -(RENTAL_ID + 5));
+    fprintf(outfile, "\n\nRental%28.3f%29.3f%28.3f", transfer[1], transfer[3], transfer[4]);
+    sampst(0.0, -(TERMINAL_1_ID + 5));
+    fprintf(outfile, "\nTerminal 1%24.3f%29.3f%28.3f", transfer[1], transfer[3], transfer[4]);
+    sampst(0.0, -(TERMINAL_2_ID + 5));
+    fprintf(outfile, "\nTerminal 2%24.3f%29.3f%28.3f", transfer[1], transfer[3], transfer[4]);
 
-    // fprintf(outfile, "\n\n\n Work      Average number      Average       Average delay");
-    // fprintf(outfile, "\nstation       in queue       utilization        in queue");
-    // for (j = 1; j <= num_stations; ++j)
-    //     fprintf(outfile, "\n\n%4d%17.3f%17.3f%17.3f", j, filest(j), timest(0.0, -j) / num_machines[j], sampst(0.0, -j));
+    // Report average maximum minimum time bus goes from rental to rental
+    fprintf(outfile, "\n\n\n\nAverage bus lap time      Maximum bus lap time       Minimum bus lap time");
+    sampst(0.0, -10);
+    fprintf(outfile, "\n\n%.3f%26.3f%28.3f", transfer[1], transfer[3], transfer[4]);
+
+    // Report average maximum minimum time in system for each location
+    fprintf(outfile, "\n\n\n\nLocation     Average time in system     Maximum time in system       Minimum time in system");
+    sampst(0.0, -(RENTAL_ID + 10));
+    fprintf(outfile, "\n\nRental%29.3f%27.3f%29.3f", transfer[1], transfer[3], transfer[4]);
+    sampst(0.0, -(TERMINAL_1_ID + 10));
+    fprintf(outfile, "\nTerminal 1%25.3f%27.3f%29.3f", transfer[1], transfer[3], transfer[4]);
+    sampst(0.0, -(TERMINAL_2_ID + 10));
+    fprintf(outfile, "\nTerminal 2%25.3f%27.3f%29.3f", transfer[1], transfer[3], transfer[4]);
 }
 
 int main() /* Main function. */
@@ -229,38 +269,38 @@ int main() /* Main function. */
 
         /* Invoke the appropriate event function. */
         // print lists and states for debugging, delete later
-        printf("------------------------------------------------------------\n");
-        printf("Time: %f, Next event type: %d\n", sim_time, next_event_type);
-        printf("Queue Lengths: Rental - %d, Terminal 1 - %d, Terminal 2 - %d, Bus - %d\n", list_size[RENTAL_ID], list_size[TERMINAL_1_ID], list_size[TERMINAL_2_ID], list_size[BUS_ID]);
-        printf("Bus location: %d\n", current_bus_location);
+        // printf("------------------------------------------------------------\n");
+        // printf("Time: %f, Next event type: %d\n", sim_time, next_event_type);
+        // printf("Queue Lengths: Rental - %d, Terminal 1 - %d, Terminal 2 - %d, Bus - %d\n", list_size[RENTAL_ID], list_size[TERMINAL_1_ID], list_size[TERMINAL_2_ID], list_size[BUS_ID]);
+        // printf("Bus location: %d\n", current_bus_location);
 
         switch (next_event_type) {
         case EVENT_PERSON_ARRIVAL_RENTAL:
-            printf("Person arrival at rental\n"); // Debugging delete later
+            // printf("Person arrival at rental\n"); // Debugging delete later
             person_arrive(RENTAL_ID);
             break;
         case EVENT_PERSON_ARRIVAL_TERMINAL_1:
-            printf("Person arrival at terminal 1\n"); // Debugging delete later
+            // printf("Person arrival at terminal 1\n"); // Debugging delete later
             person_arrive(TERMINAL_1_ID);
             break;
         case EVENT_PERSON_ARRIVAL_TERMINAL_2:
-            printf("Person arrival at terminal 2\n"); // Debugging delete later
+            // printf("Person arrival at terminal 2\n"); // Debugging delete later
             person_arrive(TERMINAL_2_ID);
             break;
         case EVENT_BUS_ARRIVAL:
-            printf("Bus arrival at location %d\n", current_bus_location); // Debugging delete later
+            // printf("Bus arrival at location %d\n", current_bus_location); // Debugging delete later
             bus_arrive(current_bus_location);
             break;
         case EVENT_BUS_DEPARTURE:
-            printf("Bus departure from location %d\n", current_bus_location); // Debugging delete later
+            // printf("Bus departure from location %d\n", current_bus_location); // Debugging delete later
             bus_depart(current_bus_location);
             break;
         case EVENT_UNLOAD_PERSON:
-            printf("Person unloading at location %d\n", current_bus_location); // Debugging delete later
+            // printf("Person unloading at location %d\n", current_bus_location); // Debugging delete later
             person_unload(current_bus_location);
             break;
         case EVENT_LOAD_PERSON:
-            printf("Person loading at location %d\n", current_bus_location); // Debugging delete later
+            // printf("Person loading at location %d\n", current_bus_location); // Debugging delete later
             person_load(current_bus_location);
             break;
         case EVENT_END_SIMULATION:

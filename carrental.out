@@ -1,2 +1,45 @@
 Car Rental Air Terminals model
 
+
+
+Location     Average queue length     Maximum queue length
+
+Rental                      8.959                   22.000
+Terminal 1                  7.848                   27.000
+Terminal 2                  6.265                   13.000
+
+
+
+Location           Average delay            Maximum delay
+
+Rental                  1356.606                 3408.369
+Terminal 1              2038.661                 5485.318
+Terminal 2              1852.712                 3518.601
+
+
+
+Average number of people on bus      Maximum number of people on bus
+
+16.206                                20.000
+
+
+
+Location     Average bus stop time        Maximum bus stop time       Minimum bus stop time
+
+Rental                     582.582                     1564.172                     300.000
+Terminal 1                 581.914                     1479.043                     300.000
+Terminal 2                 509.648                     1486.098                     300.000
+
+
+
+Average bus lap time      Maximum bus lap time       Minimum bus lap time
+
+898.615                  1842.914                     144.349
+
+
+
+Location     Average time in system     Maximum time in system       Minimum time in system
+
+Rental                     2921.127                   4515.909                     1046.857
+Terminal 1                 3203.973                   6796.850                      458.895
+Terminal 2                 2622.583                   3767.413                     1293.110
