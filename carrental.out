@@ -4,42 +4,42 @@ Car Rental Air Terminals model
 
 Location     Average queue length     Maximum queue length
 
-Rental                      8.959                   22.000
-Terminal 1                  7.848                   27.000
-Terminal 2                  6.265                   13.000
+Rental                    152.312                  403.000
+Terminal 1                104.017                  261.000
+Terminal 2                 56.193                  144.000
 
 
 
 Location           Average delay            Maximum delay
 
-Rental                  1356.606                 3408.369
-Terminal 1              2038.661                 5485.318
-Terminal 2              1852.712                 3518.601
+Rental                 20885.021                58441.708
+Terminal 1             25149.144                66527.379
+Terminal 2             18448.289                53153.693
 
 
 
 Average number of people on bus      Maximum number of people on bus
 
-16.206                                20.000
+18.520                                20.000
 
 
 
 Location     Average bus stop time        Maximum bus stop time       Minimum bus stop time
 
-Rental                     582.582                     1564.172                     300.000
-Terminal 1                 581.914                     1479.043                     300.000
-Terminal 2                 509.648                     1486.098                     300.000
+Rental                     421.894                     3198.433                       3.773
+Terminal 1                 434.766                     1479.043                      28.111
+Terminal 2                 359.562                     3125.042                       1.668
 
 
 
 Average bus lap time      Maximum bus lap time       Minimum bus lap time
 
-898.615                  1842.914                     144.349
+936.477                  3895.226                      12.922
 
 
 
 Location     Average time in system     Maximum time in system       Minimum time in system
 
-Rental                     2921.127                   4515.909                     1046.857
-Terminal 1                 3203.973                   6796.850                      458.895
-Terminal 2                 2622.583                   3767.413                     1293.110
+Rental                    24106.258                  67619.359                      320.116
+Terminal 1                22195.036                  59751.251                      458.895
+Terminal 2                21666.354                  58572.026                     1213.518

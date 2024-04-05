@@ -38,10 +38,10 @@ double bus_speed = 30.0 / 60.0 / 60.0;                                          
 double terminal_1_arrival_rate = 14.0 / 60.0 / 60.0, terminal_2_arrival_rate = 10.0 / 60.0 / 60.0, rental_arrival_rate = 24.0 / 60.0 / 60.0; // in per second
 double distance_rental_terminal_1 = 4.5, distance_terminal_1_terminal_2 = 1.0, distance_terminal_2_rental = 4.5;                             // in miles
 double destination_terminal_1_probability = 0.583, destination_terminal_2_probability = 0.417;
-// double length_simulation = 80.0 * 60.0 * 60.0; // we observe clock in seconds
-double length_simulation = 11000.0; // we observe clock in seconds
-double last_bus_arrive_time = 0.0;  // Timer to keep track of bus stop time at a location.
-double last_bus_at_rental = 0.0;    // Timer to keep track of bus stop time at rental.
+double length_simulation = 80.0 * 60.0 * 60.0; // we observe clock in seconds
+// double length_simulation = 11000.0; // we observe clock in seconds
+double last_bus_arrive_time = 0.0; // Timer to keep track of bus stop time at a location.
+double last_bus_at_rental = 0.0;   // Timer to keep track of bus stop time at rental.
 double bus_wait_time = 5.0 * 60.0;
 double current_bus_wait_time = 0.0;
 FILE *outfile;
