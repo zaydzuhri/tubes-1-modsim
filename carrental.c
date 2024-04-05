@@ -39,11 +39,12 @@ double terminal_1_arrival_rate = 14.0 / 60.0 / 60.0, terminal_2_arrival_rate = 1
 double distance_rental_terminal_1 = 4.5, distance_terminal_1_terminal_2 = 1.0, distance_terminal_2_rental = 4.5;                             // in miles
 double destination_terminal_1_probability = 0.583, destination_terminal_2_probability = 0.417;
 double length_simulation = 80.0 * 60.0 * 60.0; // we observe clock in seconds
-// double length_simulation = 11000.0; // we observe clock in seconds
-double last_bus_arrive_time = 0.0; // Timer to keep track of bus stop time at a location.
-double last_bus_at_rental = 0.0;   // Timer to keep track of bus stop time at rental.
+double last_bus_arrive_time = 0.0;             // Timer to keep track of bus stop time at a location.
+double last_bus_at_rental = 0.0;               // Timer to keep track of bus stop time at rental.
 double bus_wait_time = 5.0 * 60.0;
 double current_bus_wait_time = 0.0;
+int bus_arrived = 0;
+int is_unloading = 0;
 FILE *outfile;
 
 void person_arrive(int location) // Event function for arrival of a person to a location.
@@ -71,7 +72,7 @@ void person_arrive(int location) // Event function for arrival of a person to a 
     list_file(LAST, location);
 
     // If a bus is at this location, schedule loading of this person
-    if (current_bus_location == location) {
+    if (bus_arrived && !is_unloading && current_bus_location == location && list_size[BUS_ID] < bus_capacity && list_size[location] > 0) {
         event_schedule(sim_time + uniform(load_time_lower, load_time_upper, STREAM_LOADING), EVENT_LOAD_PERSON);
         // Cancel bus departure if it is scheduled.
         event_cancel(EVENT_BUS_DEPARTURE);
@@ -81,14 +82,22 @@ void person_arrive(int location) // Event function for arrival of a person to a 
 void bus_arrive(int location) // Event function for arrival of a bus in a location. Because of the nature of unloading and loading, this event only starts unloading and loading processes and starts a timer.
 {
     last_bus_arrive_time = sim_time;
+    bus_arrived = 1;
     // If people on bus
     if (list_size[BUS_ID] > 0) {
         // Start unloading process.
         event_schedule(sim_time + uniform(unload_time_lower, unload_time_upper, STREAM_UNLOADING), EVENT_UNLOAD_PERSON);
+        is_unloading = 1;
         // If no people on bus but people in queue at this location
-    } else if (list_size[location] > 0) {
+    } else if (list_size[location] > 0 && list_size[BUS_ID] < bus_capacity) {
         // Start loading process.
         event_schedule(sim_time + uniform(load_time_lower, load_time_upper, STREAM_LOADING), EVENT_LOAD_PERSON);
+    } else {
+        // Make sure double departure never happens
+        event_cancel(EVENT_BUS_DEPARTURE);
+        // If no people in queue and no people on bus, schedule bus departure.
+        current_bus_wait_time = (sim_time - last_bus_arrive_time > bus_wait_time) ? 0 : bus_wait_time - (sim_time - last_bus_arrive_time);
+        event_schedule(sim_time + current_bus_wait_time, EVENT_BUS_DEPARTURE);
     }
 }
 
@@ -110,6 +119,7 @@ void bus_depart(int location) // Event function for departure of a bus from a lo
     event_schedule(sim_time + (next_distance / bus_speed), EVENT_BUS_ARRIVAL);
     current_bus_location = (location == RENTAL_ID) ? TERMINAL_1_ID : (location == TERMINAL_1_ID) ? TERMINAL_2_ID
                                                                                                  : RENTAL_ID;
+    bus_arrived = 0;
     // Record time the bus was at this location.
     sampst(sim_time - last_bus_arrive_time, location + 5);
     // Record lap time
@@ -123,56 +133,65 @@ void bus_depart(int location) // Event function for departure of a bus from a lo
 
 void person_unload(int location) // Event function for unloading a person from the bus. This function schedules the unloading of the next person if there are still people on the bus.
 {
-    // Only unload person whose destination is this location.
-    // Need to go through list to find foremost person whose destination is this location.
-    int i = list_size[BUS_ID];
-    int found = 0;
-    while (i > 0 && !found) {
-        list_remove(FIRST, BUS_ID);
-        if (transfer[2] == location) {
-            found = 1;
-            // Record time this person was in system.
-            sampst(sim_time - transfer[1], location + 10);
-        } else {
-            list_file(LAST, BUS_ID);
-        }
-        i--;
-    }
-    // If there are still people on the bus, schedule unloading of the next person.
-    if (found && list_size[BUS_ID] > 0) {
-        event_schedule(sim_time + uniform(unload_time_lower, unload_time_upper, STREAM_UNLOADING), EVENT_UNLOAD_PERSON);
-    } else if (list_size[location] > 0) {
-        // If people in queue at this location, start loading process.
-        event_schedule(sim_time + uniform(load_time_lower, load_time_upper, STREAM_LOADING), EVENT_LOAD_PERSON);
-    } else {
+    if (bus_arrived) {
         // Make sure double departure never happens
         event_cancel(EVENT_BUS_DEPARTURE);
-        // If no people in queue and no people on bus, schedule bus departure.
-        current_bus_wait_time = (sim_time - last_bus_arrive_time > bus_wait_time) ? 0 : bus_wait_time - (sim_time - last_bus_arrive_time);
-        event_schedule(sim_time + current_bus_wait_time, EVENT_BUS_DEPARTURE);
+        // Only unload person whose destination is this location.
+        // Need to go through list to find foremost person whose destination is this location.
+        int i = list_size[BUS_ID];
+        int found = 0;
+        while (i > 0 && !found) {
+            list_remove(FIRST, BUS_ID);
+            if (transfer[2] == location) {
+                found = 1;
+                // Record time this person was in system.
+                sampst(sim_time - transfer[1], location + 10);
+            } else {
+                list_file(LAST, BUS_ID);
+            }
+            i--;
+        }
+        // If there are still people on the bus, schedule unloading of the next person.
+        if (found && list_size[BUS_ID] > 0) {
+            event_schedule(sim_time + uniform(unload_time_lower, unload_time_upper, STREAM_UNLOADING), EVENT_UNLOAD_PERSON);
+        } else if (list_size[location] > 0 && list_size[BUS_ID] < bus_capacity) {
+            // If people in queue at this location, start loading process.
+            event_schedule(sim_time + uniform(load_time_lower, load_time_upper, STREAM_LOADING), EVENT_LOAD_PERSON);
+            is_unloading = 0;
+        } else {
+            // If no people in queue and no people on bus, schedule bus departure.
+            current_bus_wait_time = (sim_time - last_bus_arrive_time > bus_wait_time) ? 0 : bus_wait_time - (sim_time - last_bus_arrive_time);
+            event_schedule(sim_time + current_bus_wait_time, EVENT_BUS_DEPARTURE);
+            is_unloading = 0;
+        }
     }
 }
 
 void person_load(int location) // Event function for loading a person to the bus. This function schedules the loading of the next person if there are still people in the queue.
 {
-    // If bus is not full
-    if (list_size[BUS_ID] < bus_capacity && list_size[location] > 0) {
-        // Load one person to the bus.
-        list_remove(FIRST, location);
-        // Record delay of this person.
-        sampst(sim_time - transfer[1], location);
-        // Add this person to the bus.
-        list_file(LAST, BUS_ID);
-        // If there are still people in the queue, schedule loading of the next person
-        if (list_size[location] > 0) {
-            event_schedule(sim_time + uniform(load_time_lower, load_time_upper, STREAM_LOADING), EVENT_LOAD_PERSON);
-        }
-    } else {
+    if (bus_arrived) {
         // Make sure double departure never happens
         event_cancel(EVENT_BUS_DEPARTURE);
-        // If no people in queue and no people on bus, schedule bus departure.
-        current_bus_wait_time = (sim_time - last_bus_arrive_time > bus_wait_time) ? 0 : bus_wait_time - (sim_time - last_bus_arrive_time);
-        event_schedule(sim_time + current_bus_wait_time, EVENT_BUS_DEPARTURE);
+        // If bus is not full
+        if (list_size[BUS_ID] < bus_capacity && list_size[location] > 0) {
+            // Load one person to the bus.
+            list_remove(FIRST, location);
+            // Record delay of this person.
+            sampst(sim_time - transfer[1], location);
+            // Add this person to the bus.
+            list_file(LAST, BUS_ID);
+            // If there are still people in the queue, schedule loading of the next person
+            if (list_size[location] > 0 && list_size[BUS_ID] < bus_capacity) {
+                event_schedule(sim_time + uniform(load_time_lower, load_time_upper, STREAM_LOADING), EVENT_LOAD_PERSON);
+            } else {
+                current_bus_wait_time = (sim_time - last_bus_arrive_time > bus_wait_time) ? 0 : bus_wait_time - (sim_time - last_bus_arrive_time);
+                event_schedule(sim_time + current_bus_wait_time, EVENT_BUS_DEPARTURE);
+            }
+        } else {
+            // If no people in queue and no people on bus, schedule bus departure.
+            current_bus_wait_time = (sim_time - last_bus_arrive_time > bus_wait_time) ? 0 : bus_wait_time - (sim_time - last_bus_arrive_time);
+            event_schedule(sim_time + current_bus_wait_time, EVENT_BUS_DEPARTURE);
+        }
     }
 }
 
@@ -273,6 +292,8 @@ int main() /* Main function. */
         // printf("Time: %f, Next event type: %d\n", sim_time, next_event_type);
         // printf("Queue Lengths: Rental - %d, Terminal 1 - %d, Terminal 2 - %d, Bus - %d\n", list_size[RENTAL_ID], list_size[TERMINAL_1_ID], list_size[TERMINAL_2_ID], list_size[BUS_ID]);
         // printf("Bus location: %d\n", current_bus_location);
+        // printf("Bus arrived: %d\n", bus_arrived);
+        // printf("Last bus arrive time: %f\n", last_bus_arrive_time);
 
         switch (next_event_type) {
         case EVENT_PERSON_ARRIVAL_RENTAL:
