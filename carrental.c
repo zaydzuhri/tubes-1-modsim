@@ -69,6 +69,7 @@ void person_arrive(int location) // Event function for arrival of a person to a 
     // Add the person to the queue of this location.
     transfer[1] = sim_time;
     transfer[2] = destination;
+    transfer[3] = location;
     list_file(LAST, location);
 
     // If a bus is at this location, schedule loading of this person
@@ -145,7 +146,7 @@ void person_unload(int location) // Event function for unloading a person from t
             if (transfer[2] == location) {
                 found = 1;
                 // Record time this person was in system.
-                sampst(sim_time - transfer[1], location + 10);
+                sampst(sim_time - transfer[1], transfer[3] + 10);
             } else {
                 list_file(LAST, BUS_ID);
             }
